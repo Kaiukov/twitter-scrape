@@ -6,7 +6,3 @@ requires-python = ">=3.8"
 dependencies = [
     "snscrape",
 ]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
