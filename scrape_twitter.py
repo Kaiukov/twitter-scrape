@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Twitter Scraper using snscrape
-Installation: uv add snscrape
+Twitter Scraper using twscrape
+Installation: uv add twscrape
 Usage: python scrape_twitter.py "from:elonmusk since:2024-01-01"
 """
 
@@ -9,38 +9,44 @@ import argparse
 import json
 import csv
 import sys
-import ssl
-import urllib3
+import asyncio
 from datetime import datetime
 from pathlib import Path
 
-# Disable SSL warnings and configure SSL context
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-ssl._create_default_https_context = ssl._create_unverified_context
-
 try:
-    import snscrape.modules.twitter as sntwitter
+    from twscrape import API, gather
+    from twscrape.logger import set_log_level
 except ImportError:
-    print("❌ snscrape not installed. Install with: uv add snscrape")
+    print("❌ twscrape not installed. Install with: uv add twscrape")
     sys.exit(1)
 
 
-def scrape_tweets(query, limit=100, output_format="json"):
-    """Scrape tweets based on query and return results"""
+async def scrape_tweets(query, limit=100):
+    """Scrape tweets using twscrape"""
     tweets = []
     
     print(f"🔍 Searching for: {query}")
     print(f"📊 Limit: {limit} tweets")
     
+    # Suppress verbose logging
+    set_log_level("WARNING")
+    
     try:
-        for i, tweet in enumerate(sntwitter.TwitterSearchScraper(query).get_items()):
-            if i >= limit:
-                break
-                
+        api = API()  # Initialize API
+        
+        # Check if accounts are logged in
+        accounts = await api.pool.accounts_info()
+        if not accounts:
+            print("⚠️  No Twitter accounts configured")
+            print("💡 Add account with: twscrape add_account username email password")
+            return []
+        
+        # Search tweets
+        async for tweet in api.search(query, limit=limit):
             tweet_data = {
                 'id': tweet.id,
                 'date': tweet.date.isoformat(),
-                'content': tweet.content,
+                'content': tweet.rawContent,
                 'username': tweet.user.username,
                 'displayname': tweet.user.displayname,
                 'url': tweet.url,
@@ -48,17 +54,19 @@ def scrape_tweets(query, limit=100, output_format="json"):
                 'like_count': tweet.likeCount,
                 'reply_count': tweet.replyCount,
                 'quote_count': tweet.quoteCount,
-                'hashtags': [tag for tag in tweet.hashtags] if tweet.hashtags else [],
+                'hashtags': [tag.lower() for tag in tweet.hashtags] if tweet.hashtags else [],
                 'mentions': [mention.username for mention in tweet.mentionedUsers] if tweet.mentionedUsers else []
             }
             tweets.append(tweet_data)
             
             # Progress indicator
-            if (i + 1) % 10 == 0:
-                print(f"📥 Scraped {i + 1} tweets...")
+            if len(tweets) % 10 == 0:
+                print(f"📥 Scraped {len(tweets)} tweets...")
     
     except Exception as e:
         print(f"❌ Error during scraping: {e}")
+        if "No accounts available" in str(e):
+            print("💡 Setup: twscrape add_account username email password")
         return []
     
     print(f"✅ Successfully scraped {len(tweets)} tweets")
@@ -66,7 +74,7 @@ def scrape_tweets(query, limit=100, output_format="json"):
 
 
 def save_tweets(tweets, output_format, filename=None):
-    """Save tweets to file in specified format"""
+    """Save tweets to file"""
     if not tweets:
         print("⚠️ No tweets to save")
         return
@@ -92,36 +100,36 @@ def save_tweets(tweets, output_format, filename=None):
                     tweet_copy['mentions'] = ', '.join(tweet['mentions'])
                     writer.writerow(tweet_copy)
         print(f"💾 Saved {len(tweets)} tweets to {filename}")
-    
-    else:
-        print(f"❌ Unsupported format: {output_format}")
 
 
-def main():
+async def main():
     parser = argparse.ArgumentParser(
-        description="Scrape Twitter using snscrape",
+        description="Scrape Twitter using twscrape",
         epilog="""
+Setup (first time):
+  twscrape add_account username1 email1@example.com password1
+  twscrape login_accounts
+
 Examples:
-  python scrape_twitter.py "from:elonmusk since:2024-01-01"
-  python scrape_twitter.py "ukraine lang:en" --limit 50 --format csv
-  python scrape_twitter.py "#python" --limit 200 --output my_tweets.json
+  uv run scrape_twitter.py "from:elonmusk since:2024-01-01"
+  uv run scrape_twitter.py "ukraine lang:en" --limit 50 --format csv
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
     parser.add_argument("query", help="Twitter search query")
     parser.add_argument("--limit", "-l", type=int, default=100, 
-                       help="Maximum number of tweets to scrape (default: 100)")
+                       help="Maximum number of tweets (default: 100)")
     parser.add_argument("--format", "-f", choices=["json", "csv"], default="json",
                        help="Output format (default: json)")
     parser.add_argument("--output", "-o", help="Output filename")
     parser.add_argument("--print", "-p", action="store_true", 
-                       help="Print tweets to console instead of saving")
+                       help="Print tweets to console")
     
     args = parser.parse_args()
     
     # Scrape tweets
-    tweets = scrape_tweets(args.query, args.limit, args.format)
+    tweets = await scrape_tweets(args.query, args.limit)
     
     if not tweets:
         print("❌ No tweets found")
@@ -139,4 +147,4 @@ Examples:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
