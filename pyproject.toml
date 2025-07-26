@@ -5,4 +5,5 @@ description = "Twitter scraper using snscrape"
 requires-python = ">=3.8"
 dependencies = [
     "snscrape",
+    "urllib3",
 ]

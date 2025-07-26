@@ -9,8 +9,14 @@ import argparse
 import json
 import csv
 import sys
+import ssl
+import urllib3
 from datetime import datetime
 from pathlib import Path
+
+# Disable SSL warnings and configure SSL context
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+ssl._create_default_https_context = ssl._create_unverified_context
 
 try:
     import snscrape.modules.twitter as sntwitter
